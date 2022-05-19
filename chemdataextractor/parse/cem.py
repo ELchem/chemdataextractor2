@@ -155,6 +155,14 @@ amino_acid_name = (
     R('^(histidine|isoleucine|leucine|lysine|methionine|phenylalanine|threonine|tryptophan|valine|selenocysteine|serine|tyrosine|alanine|arginine|asparagine|cysteine|glutamine|glycine|proline)$', re.I) |
     I('aspartic') + I('acid') | I('glutamic') + I('acid')
 )
+#RNA/DNA Bases
+base_pair_strand = (
+    R(u'^', re.I)| Optional(W(u'3′-')) + Optional(I(u'[a-zA-Z]+-'))| Optional(W(u'5′-') + Optional(I(u'[a-zA-Z]+-')))
+    +
+    R('[ACTGU ]{4,100}')(u'value')
+    +
+    (Optional(I(u'[a-zA-Z]+-')) + Optional(W(u'-3′'))|Optional(I(u'[a-zA-Z]+-'))+ Optional(W(u'-5′')))
+)
 
 #: Chemical formula patterns, updated to include Inorganic compound formulae
 formula = ((
