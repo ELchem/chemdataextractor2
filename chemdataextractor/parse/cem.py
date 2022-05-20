@@ -299,7 +299,7 @@ solvent_name_options = (nmr_solvent | solvent_formula | other_solvent)
 solvent_name = (Optional(include_prefix) + solvent_name_options)('names').add_action(join).add_action(fix_whitespace)
 chemical_name_blacklist = (I('mmc'))
 proper_chemical_name_options = Group(Not(chemical_name_blacklist) + (
-    formula ^ cm ^ element_name ^ element_symbol ^ registry_number ^ amino_acid ^ amino_acid_name
+    formula ^ cm ^ element_name ^ element_symbol ^ registry_number ^ amino_acid ^ amino_acid_name ^ base_pair_strand
 ))
 
 
