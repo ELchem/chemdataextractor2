@@ -274,7 +274,7 @@ class MultiQuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
                 + self.single_cem
                 + Optional(lbrct + R('^\d+$') + rbrct).hide()
                 + Optional(I('compounds') | I('samples')))('cem_list')
-
+        
     @property
     def single_specifier_and_value_with_optional_unit(self):
         """Specifier plus value and possible unit"""
@@ -385,23 +385,28 @@ class MultiQuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
 
     def interpret(self, result, start, end):
         if result.tag == 'multi_entity_phrase_1':
+            print("multi_entity_phrase_1")            
             for model in self.interpret_multi_entity_1(result, start, end):
                 # records the parser that was used to generate this record, can be used for evaluation
                 model.record_method = self.__class__.__name__
                 yield model
         elif result.tag == 'multi_entity_phrase_2':
+            print("multi_entity_phrase_2")
             for model in self.interpret_multi_entity_2(result, start, end):
                 model.record_method = self.__class__.__name__
                 yield model
         elif result.tag == 'multi_entity_phrase_3':
+            print("multi_entity_phrase_3")
             for model in self.interpret_multi_entity_3(result, start, end):
                 model.record_method = self.__class__.__name__
                 yield model
         elif result.tag == 'multi_entity_phrase_4':
+            print("multi_entity_phrase_4")            
             for model in self.interpret_multi_entity_4(result, start, end):
                 model.record_method = self.__class__.__name__
                 yield model
         else:
+            print("yield none")
             yield None
 
     def interpret_multi_entity_1(self, result, start, end):
@@ -524,29 +529,34 @@ class MultiQuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
     def interpret_multi_entity_3(self, result, start, end):
         """interpret multiple compounds, single specifier, multiple transitions"""
         if result is None:
+            print("result none")
             return
-
+        
         cem_list = first(result.xpath('./cem_list'))
 
         if cem_list is None:
+            print("cemlist none")
             yield None
 
         specifier = first(result.xpath('./specifier/text()'))
 
         if specifier is None:
+            print("specifier none")
             yield None
 
         value_list = first(result.xpath('./value_list'))
 
         if value_list is None:
+            print("value list none")
             yield None
-
+        print("made it")
         raw_values_list = value_list.xpath('./raw_value')
         raw_units_list = value_list.xpath('./raw_units')
-
+        print("length of raw values list", len(raw_values_list))
+        print("length of raw values list", len(cem_list))
         last_unit = None
         for i, v in enumerate(raw_values_list[::-1]):  # Reverse order to make sure we get a unit
-
+            
             raw_value = first(v.xpath('./text()'))
             requirements = True
             try:
@@ -554,16 +564,32 @@ class MultiQuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
                 last_unit = raw_units
             except IndexError:
                 if last_unit:
+                    print("index error but its fine")
                     raw_units = last_unit
                 else:
                     requirements = False
             c = None
             try:
                 compound = cem_list[::-1][i]
-                c = self.model.compound.model_class(
-                    names=compound.xpath('./names/text()',
-                    labels=compound.xpath('./labels/text()')))
-            except Exception:
+                if not compound.find('./names') and compound.find('./labels)'):
+                    c = self.model.compound.model_class(
+                    labels=compound.xpath('./labels/text()')
+                    )
+                elif compound.find('./names') and not compound.find('./labels'):
+                        c = self.model.compound.model_class(
+                        names=compound.xpath('./names/text()'),
+                        )
+                else:
+                    c = self.model.compound.model_class(
+                        names=compound.xpath('./names/text()'),
+                        labels=compound.xpath('./labels/text()')
+                        )
+                # c = self.model.compound.model_class(
+                #     names=compound.xpath('./names/text()'),
+                #     labels=compound.xpath('./labels/text()')
+                #     )
+            except Exception as err:
+                print("exception:", err)
                 requirements = False
 
             value = self.extract_value(raw_value)
@@ -572,6 +598,7 @@ class MultiQuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
             try:
                 units = self.extract_units(raw_units, strict=True)
             except TypeError as e:
+                print("type error")
                 requirements=False
                 log.debug(e)
 

@@ -34,8 +34,8 @@ class Compound(BaseModel):
     labels = SetType(StringType(), parse_expression=NoMatch(), updatable=True)
     roles = SetType(StringType(), parse_expression=roles_only, updatable=True)
     parsers = [CompoundParser(), CompoundHeadingParser(), ChemicalLabelParser(), CompoundTableParser()]
-    # parsers = [CompoundParser(), CompoundHeadingParser(), ChemicalLabelParser()]
-    # parsers = [CompoundParser()]
+    # parsers = [CompoundParser(), CompoundHeadingParser(), ]
+    # parsers = [CompoundParser(), ChemicalLabelParser()]
 
     def merge(self, other):
         """Merge data from another Compound into this Compound."""

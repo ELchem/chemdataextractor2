@@ -64,13 +64,13 @@ colon = (W(':') | T(':')).hide()
 # Prefixes to include in the name
 include_prefix = Not(bcm) + R('^(deuterated|triflated|butylated|brominated|acetylated|twisted)$', re.I)
 
-label_type = (Optional(I('reference') | I('comparative')) + R('^(compound|ligand|chemical|dye|derivative|complex|example|intermediate|product|formulae?|preparation|specimen)s?$', re.I))('roles').add_action(join) + Optional(colon).hide()
+label_type = (Optional(I('reference') | I('comparative')| I('forward')| I('reverse')| I('toehold')) + R('^(compound|ligand|chemical|dye|derivative|complex|example|intermediate|product|formulae?|preparation|specimen|primer|strand|sequence)s?$', re.I))('roles').add_action(join) + Optional(colon).hide()
 
 synthesis_of = ((I('synthesis') | I('preparation') | I('production') | I('data')) + (I('of') | I('for')))('roles').add_action(join)
 
 to_give = (I('to') + (I('give') | I('yield') | I('afford')) | I('afforded') | I('affording') | I('yielded'))('roles').add_action(join)
 
-label_blacklist = R('^(wR.*|R\d|31P|[12]H|[23]D|15N|14C|[4567890]\d+|2A)$')
+label_blacklist = R('^(wR.*|R\d|31P|[12]H|[23]D|15N|13C|14C|[4567890]\d+|2A)$')
 
 prefixed_label = Every([R('^(cis|trans)-((d-)?(\d{1,2}[A-Za-z]{0,2}[′″‴‶‷⁗]?)(-d)?|[LS]\d\d?)$'), Not(bcm | icm)])
 
@@ -79,9 +79,13 @@ strict_chemical_label = Not(label_blacklist) + (alphanumeric | roman_numeral | l
 
 lenient_chemical_label = numeric('labels') | Every([R('^([A-Z]\d{1,3})$'), Not(bcm | icm)])('labels') | strict_chemical_label
 
-very_lenient_chemical_label = lenient_numeric('labels') | R('^([A-Z]\d{1,3})$')('labels') | strict_chemical_label
+#dna/rna strand labels rules
+camel_case_gene_label = R('[A-Z]{1}[A-Za-z]+')
+strand_labels = Group((nn | nns | camel_case_gene_label)('labels'))
 
-chemical_label = ((label_type + lenient_chemical_label + ZeroOrMore((T('CC') | comma) + lenient_chemical_label)) | (Optional(label_type.hide()) + strict_chemical_label + ZeroOrMore((T('CC') | comma) + strict_chemical_label)))
+very_lenient_chemical_label = strand_labels | lenient_numeric('labels') | R('^([A-Z]\d{1,3})$')('labels') | strict_chemical_label
+
+chemical_label = ((label_type + lenient_chemical_label + ZeroOrMore((T('CC') | comma) + lenient_chemical_label)) | (Optional(label_type.hide()) + strict_chemical_label + ZeroOrMore((T('CC') | comma) + strict_chemical_label))).add_action(join)
 
 #: Chemical label with a label type before
 chemical_label_phrase1 = (Optional(synthesis_of) + label_type + lenient_chemical_label + ZeroOrMore((T('CC') | comma) + lenient_chemical_label))
@@ -89,7 +93,13 @@ chemical_label_phrase1 = (Optional(synthesis_of) + label_type + lenient_chemical
 chemical_label_phrase2 = (synthesis_of + Optional(label_type) + lenient_chemical_label + ZeroOrMore((T('CC') | comma) + lenient_chemical_label))
 # Chemical label with to give/afforded etc. before, and some restriction after.
 chemical_label_phrase3 = (to_give + Optional(dt) + Optional(label_type) + lenient_chemical_label + Optional(lbrct + OneOrMore(Not(rbrct) + Any()) + rbrct).hide() + (End() | I('as') | colon | comma).hide())
-
+#: Chemical label with RNA/DNA label information
+#eg. BamHI/Xhol  
+camel_case_gene_label = R('[A-Z]{1}[a-z]+[A-Z]+')
+base_pair_strand = (R('[\dA-Za-z\.\-\'′`]*[ACTGUactgu]{8,}[\dA-Za-z\.\-]*[\dA-Za-z\'′`]*'))('names')
+#Lenient label match, with format BamHI forward primer (5'-ACGCTG...-3')
+gene_label_with_bracketed_name = (Optional((T('NN') | T('NNP') | camel_case_gene_label)('labels').add_action(join)) + Optional(label_type) + Optional(lbrct) + base_pair_strand + Optional(rbrct))('compound')
+# gene_label_with_bracketed_name = (OneOrMore(T('JJ') | T('NN') | T('NNP') | T('HYPH') | T('VBG'))('labels').add_action(join) + Optional(delim) + Optional(rbrct) + base_pair_strand + Optional(rbrct))('compound')
 
 ###### DOPED CHEMICAL LABELS ##########
 doped_chemical_identifier = (W('x') | W('y'))
@@ -155,6 +165,32 @@ amino_acid_name = (
     R('^(histidine|isoleucine|leucine|lysine|methionine|phenylalanine|threonine|tryptophan|valine|selenocysteine|serine|tyrosine|alanine|arginine|asparagine|cysteine|glutamine|glycine|proline)$', re.I) |
     I('aspartic') + I('acid') | I('glutamic') + I('acid')
 )
+
+"""
+captures DNA/RNA molecules along with arbitrary capping groups and 5'/3' notation eg.
+5′-ATTTT CCATC AAGAA CAGGC CACCT CGCCA CCATG GTGAG CA-3′
+5′-thiol-AAAAAGTCTGTATTAAAAAATAGCTTATCAGAC-Cy5−3′
+Avoids capturing strings that simply contain the [ACTGU]{3,} pattern
+by specifying that (?![BD-FH-SV-Za-z]) comes before and after [ACTGU]{3,}
+ie. no non basepairs can rest directly against a basepair string
+"""
+# base_pair_strand = (
+#     R('[\dA-Za-z\.\-\'′`]*[ACTGUactgu]{8,}[\dA-Za-z\.\-]*[\dA-Za-z\'′`]*')
+# )
+# #RNA/DNA Bases
+base_pair_strand = (
+    R('(?:[ACTGU]{1,2})?(?:[ ]?(?![BD-FH-SV-Za-z])[ACTGU]{3,}(?![BD-FH-SV-Za-z])[ ]?)+(?:[ACTGU]{1,2})?')
+)
+#RNA/DNA Bases
+
+#RNA/DNA Bases
+# base_pair_strand = (
+#     R(u'^', re.I)| Optional(W(u'3′-')) + Optional(R(u'[a-zA-Z0-9]+-'))| Optional(W(u'5′-') + Optional(R(u'[a-zA-Z0-9]+-')))
+#     +
+#     R('(?:[ACTGU]{1,2})?(?:[ ]?(?![BD-FH-SV-Za-z])[ACTGU]{3,}(?![BD-FH-SV-Za-z])[ ]?)+(?:[ACTGU]{1,2})?')
+#     +
+#     (Optional(R(u'-[a-zA-Z0-9]+')) + Optional(W(u'-3′'))|Optional(R(u'-[a-zA-Z0-9]+'))+ Optional(W(u'-5′')))
+# )
 
 #: Chemical formula patterns, updated to include Inorganic compound formulae
 formula = ((
@@ -291,7 +327,7 @@ solvent_name_options = (nmr_solvent | solvent_formula | other_solvent)
 solvent_name = (Optional(include_prefix) + solvent_name_options)('names').add_action(join).add_action(fix_whitespace)
 chemical_name_blacklist = (I('mmc'))
 proper_chemical_name_options = Group(Not(chemical_name_blacklist) + (
-    formula ^ cm ^ element_name ^ element_symbol ^ registry_number ^ amino_acid ^ amino_acid_name
+    formula ^ cm ^ element_name ^ element_symbol ^ registry_number ^ amino_acid ^ amino_acid_name ^ base_pair_strand
 ))
 
 
@@ -322,6 +358,17 @@ label_before_name = Optional(synthesis_of | to_give) + label_type + optdelim + l
 # Very lenient name and label match, with format like "name (Compound 3)"
 lenient_name_with_bracketed_label = (Start() + Optional(synthesis_of) + lenient_name + lbrct + label_type.hide() + lenient_chemical_label + rbrct)('compound')
 
+"""
+Capture gene/strand labels using rule based approach.
+Evan L.
+"""
+#eg. BamHI/Xhol  
+# camel_case_gene_label = R('[A-Z]{1}[A-Za-z]+')
+# primer_direction = ((I('reverse') | I('forward')) + (I('primer') | I('strand') | I('plasmid'))).add_action(join)
+# #Lenient label match, with format BamHI forward primer (5'-ACGCTG...-3')
+#gene_label_with_bracketed_name = (Start() + ((nn | camel_case_gene_label | 'Xhol' | 'BamHI')('labels') + Optional(primer_direction)) + lbrct + base_pair_strand + rbrct)('compound')
+# gene_label_with_bracketed_name = (W("BamHI")('label'))('compound')
+
 # chemical name with a comma in it that hasn't been tagged.
 name_with_comma_within = Start() + Group(Optional(synthesis_of) + (cm + W(',') + cm + Not(bcm | icm) + Not(I('and')))('names').add_action(join).add_action(fix_whitespace))('compound')
 
@@ -335,8 +382,8 @@ name_with_informal_label = (chemical_name + Optional(R('compounds?')) + OneOrMor
 
 # TODO: Currently ensuring roles are captured from text preceding cem/cem_phrase ... abstract out the 'to_give"
 
-cem = (label_before_name | name_with_informal_label | name_with_doped_label | lenient_name_with_bracketed_label | name_with_comma_within | name_with_optional_bracketed_label)
-
+cem = (gene_label_with_bracketed_name | label_before_name | name_with_informal_label | name_with_doped_label | lenient_name_with_bracketed_label | name_with_comma_within | name_with_optional_bracketed_label)
+# cem = (gene_label_with_bracketed_name)
 cem_phrase = Group(cem)('cem_phrase').add_action(fix_whitespace)
 
 r_equals = R('^[R]$') + W('=') + OneOrMore(Not(rbrct) + (bcm | icm | nn | nnp | nns | hyph | cd | ls))
@@ -364,10 +411,16 @@ names_only = Group((solvent_name | chemical_name
               | likely_abbreviation
               | (Start() + Group(Optional(synthesis_of) + (cm + W(',') + cm + Not(bcm | icm) + Not(I('and'))).add_action(join).add_action(fix_whitespace)))))('compound')
 
-labels_only = Group((doped_chemical_label | informal_chemical_label | numeric | Every([R('^([A-Z]\d{1,3})$'), Not(bcm | icm)]) | strict_chemical_label))('compound')
+labels_only = Group(( doped_chemical_label | informal_chemical_label | numeric | Every([R('^([A-Z]\d{1,3})$'), Not(bcm | icm)]) | strict_chemical_label))('compound')
 
 roles_only = Group((label_type | synthesis_of | to_give))('compound')
 
+#: Chemical label with RNA/DNA label information
+#eg. BamHI/Xhol  
+# camel_case_gene_label = R('[A-Z]{1}[A-Za-z]+')
+# strand_labels = (nn | camel_case_gene_label | 'BamHI')('labels')
+#Lenient label match, with format BamHI forward primer (5'-ACGCTG...-3')
+#gene_label_with_bracketed_name = ((Group(nn | camel_case_gene_label | 'Xhol' | 'BamHI')('labels') + label_type + (lbrct + chemical_name + rbrct)).add_action(join).add_action(fix_whitespace))('compound')
 
 def standardize_role(role):
     """Convert role text into standardized form."""
@@ -385,26 +438,40 @@ class CompoundParser(BaseSentenceParser):
 
     @property
     def root(self):
+        """_summary_
+        self.model == Compound
+        self.model.labels == SetType(StringType(), parse_expression=NoMatch(), updatable=True)
+        self.model.labels.parse_expression == NoType inherits from BaseParserElement
+        self.model.labels.parse_expression('labels') -> sets 
+        Returns:
+            _type_: _description_
+        """
         label = self.model.labels.parse_expression('labels')
+        print(label)
+
         label_name_cem = (label + optdelim + chemical_name)('compound')
 
         label_before_name = Optional(synthesis_of | to_give) + label_type + optdelim + label_name_cem + ZeroOrMore(optdelim + cc + optdelim + label_name_cem)
-
+        
         name_with_optional_bracketed_label = (Optional(synthesis_of | to_give) + chemical_name + Optional(lbrct + Optional(labelled_as + optquote) + (label) + optquote + rbrct))('compound')
 
         # Very lenient name and label match, with format like "name (Compound 3)"
         lenient_name_with_bracketed_label = (Start() + Optional(synthesis_of) + lenient_name + lbrct + label_type.hide() + label + rbrct)('compound')
-
+        # lenient_label_with_bracketed_name = (Start() + Optional(synthesis_of) + label + label_type.hide() + lbrct + lenient_name + rbrct)('compound')
         # Chemical name with a doped label after
         # name_with_doped_label = (chemical_name + OneOrMore(delim | I('with') | I('for')) + label)('compound')
+        #: Chemical label with RNA/DNA label information
 
         # Chemical name with an informal label after
         # name_with_informal_label = (chemical_name + Optional(R('compounds?')) + OneOrMore(delim | I('with') | I('for')) + informal_chemical_label)('compound')
-        return Group(name_with_informal_label | name_with_doped_label | lenient_name_with_bracketed_label | label_before_name | name_with_comma_within | name_with_optional_bracketed_label)('cem_phrase')
+        # return Group(gene_label_with_bracketed_name)('cem_phrase')
+        return Group(gene_label_with_bracketed_name | name_with_informal_label | name_with_doped_label | lenient_name_with_bracketed_label | label_before_name | name_with_comma_within | name_with_optional_bracketed_label)('cem_phrase')
+        # return (gene_label_with_bracketed_name)('cem_phrase')
 
     def interpret(self, result, start, end):
         # TODO: Parse label_type into label model object
-        # print(etree.tostring(result))
+        #print(etree.tostring(result))
+        # print(result)
         for cem_el in result.xpath('./compound'):
             c = self.model(
                 names=cem_el.xpath('./names/text()'),

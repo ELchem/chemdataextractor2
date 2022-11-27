@@ -16,6 +16,7 @@ import io
 import json
 import logging
 import copy
+import re
 
 import six
 
@@ -600,6 +601,16 @@ class Document(BaseDocument):
         html_lines.append('</div>')
         return '\n'.join(html_lines)
 
+    def _add_re_to_ner(self,token,tag):
+        regex_ner_tokens = [
+            ('[\dA-Za-z\.\-\'′`]*[ACTGUactgu]{8,}[\dA-Za-z\.\-\'′`]*','I-CM')
+            ]
+        for tok in regex_ner_tokens:
+            expression,ner_tag = tok
+            if re.fullmatch(expression,token.text):
+                return ner_tag
+        return tag
+
     def _batch_assign_tags(self, tagger, tag_type):
         """
         Batch assign all the tags for a certain tag type.
@@ -626,7 +637,10 @@ class Document(BaseDocument):
 
         for tag_result in tag_results:
             for token, tag in tag_result:
-                token._tags[tag_type] = tag
+                if tag_type == "ner_tag":
+                    token._tags[tag_type] = self._add_re_to_ner(token,tag)
+                else:
+                    token._tags[tag_type] = tag
 
     @property
     def sentences(self):

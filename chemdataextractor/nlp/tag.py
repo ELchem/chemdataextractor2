@@ -262,7 +262,7 @@ class RegexTagger(BaseTagger):
         """Return a list of (token, tag) tuples for a given list of tokens."""
         tags = []
         for token in tokens:
-            normalized = self.lexicon[token].normalized
+            normalized = self.lexicon[token.text].normalized
             for regex, tag in self.regexes:
                 if regex.match(normalized):
                     tags.append((token, tag))

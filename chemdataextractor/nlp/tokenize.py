@@ -12,7 +12,8 @@ from abc import ABCMeta, abstractmethod
 from deprecation import deprecated
 import logging
 import re
-
+from itertools import chain
+import pprint
 import six
 
 from ..text import bracket_level, GREEK
@@ -472,9 +473,9 @@ class ChemWordTokenizer(WordTokenizer):
     #: Regular expression that matches a numeric quantity with units
     QUANTITY_RE = re.compile(r'^((?P<split>\d\d\d)g|(?P<_split1>[-−]?\d+\.\d+|10[-−]\d+)(g|s|m|N|V)([-−]?[1-4])?|(?P<_split2>\d*[-−]?\d+\.?\d*)([pnµμm]A|[µμmk]g|[kM]J|m[lL]|[nµμm]?M|[nµμmc]m|kN|[mk]V|[mkMG]?W|[mnpμµ]s|Hz|[Mm][Oo][Ll](e|ar)?s?|k?Pa|ppm|min)([-−]?[1-4])?)$')
     #: Don't split on hyphen if the prefix matches this regular expression
-    NO_SPLIT_PREFIX_ENDING = re.compile('(^\(.*\)|^[\d,\'"“”„‟‘’‚‛`´′″‴‵‶‷⁗Α-Ωα-ω]+|ano|ato|azo|boc|bromo|cbz|chloro|eno|fluoro|fmoc|ido|ino|io|iodo|mercapto|nitro|ono|oso|oxalo|oxo|oxy|phospho|telluro|tms|yl|ylen|ylene|yliden|ylidene|ylidyn|ylidyne)$', re.U)
+    NO_SPLIT_PREFIX_ENDING = re.compile('(^\(.*\)|^[\d,\'"“”„‟‘’‚‛`´′″‴‵‶‷⁗Α-Ωα-ω]+|[ACTGUactgu]{8,}|ano|ato|azo|boc|bromo|cbz|chloro|cy|eno|fluoro|fmoc|ido|ino|io|iodo|mercapto|nitro|ono|oso|oxalo|oxo|oxy|phospho|telluro|tms|yl|ylen|ylene|yliden|ylidene|ylidyn|ylidyne)$', re.U)  #add cy EL #added [ACTGU]{8,} EL
     #: Don't split on hyphen if prefix or suffix match this regular expression
-    NO_SPLIT_CHEM = re.compile('([\-α-ω]|\d+,\d+|\d+[A-Z]|^d\d\d?$|acetic|acetyl|acid|acyl|anol|azo|benz|bromo|carb|cbz|chlor|cyclo|ethan|ethyl|fluoro|fmoc|gluc|hydro|idyl|indol|iene|ione|iodo|mercapto|n,n|nitro|noic|o,o|oxalo|oxo|oxy|oyl|onyl|phen|phth|phospho|pyrid|telluro|tetra|tms|ylen|yli|zole|alpha|beta|gamma|delta|epsilon|theta|kappa|lambda|sigma|omega)', re.U | re.I)
+    NO_SPLIT_CHEM = re.compile('([\-α-ω]|\d+,\d+|\d+[A-Z]|^d\d\d?$|[ACTGUactgu]{8,}|acetic|acetyl|acid|acyl|anol|azo|benz|bromo|carb|cbz|chlor|cyclo|ethan|ethyl|fluoro|fmoc|gluc|hydro|idyl|indol|iene|ione|iodo|mercapto|n,n|nitro|noic|o,o|oxalo|oxo|oxy|oyl|onyl|phen|phth|phospho|pyrid|telluro|tetra|tms|ylen|yli|zole|alpha|beta|gamma|delta|epsilon|theta|kappa|lambda|sigma|omega)', re.U | re.I) #added [ACTGU]{8,} EL
     #: Don't split on hyphen if the prefix is one of these sequences
     NO_SPLIT_PREFIX = {
         'e', 'a', 'u', 'x', 'agro', 'ante', 'anti', 'arch', 'be', 'bi', 'bio', 'co', 'counter', 'cross', 'cyber',
@@ -944,7 +945,8 @@ class BertWordTokenizer(ChemWordTokenizer):
     middle of a number, and splitting values and units.
     """
 
-    do_not_split = []
+    regex_defined_tokens = ['[\dA-Za-z\.\-\'′`]*[ACTGUactgu]{8,}[\dA-Za-z\.\-]*[\dA-Za-z\'′`]*']
+    do_not_split = ['-']
     do_not_split_if_in_num = [".", ","]
 
     def __init__(self, split_last_stop=True, path=None, lowercase=True):
@@ -954,6 +956,9 @@ class BertWordTokenizer(ChemWordTokenizer):
         self.tokenizer = BertWordPieceTokenizer(path, lowercase=lowercase)
 
     def span_tokenize(self, s, additional_regex=None):
+        """
+        called for each ...
+        """
         output = self.tokenizer.encode(str(s))
         offsets = output.offsets[1: -1]
         given_tokens = output.tokens[1: -1]
@@ -965,7 +970,7 @@ class BertWordTokenizer(ChemWordTokenizer):
         while i < len(zipped):
             offset, token = zipped[i]
 
-            # If symbol is in do_not_split and it's part of a word, i.e. it's not surrounded
+            # If symbol is in do_not_split_if_in_num and it's part of a word, i.e. it's not surrounded
             # by whitespace, then don't split it
             if (s[offset[0]: offset[1]] in self.do_not_split_if_in_num and offset[0] == current_span[1]
                and i < len(zipped) - 1 and zipped[i + 1][0][0] == offset[1]
@@ -1002,5 +1007,35 @@ class BertWordTokenizer(ChemWordTokenizer):
                 spans[i:i + 1] = [subspan for subspan in subspans if subspan[1] - subspan[0] > 0]
                 if len(subspans) == 1:
                     i += 1
-
+        spans = self._regex_tokenize(s,spans)
         return spans
+
+    def _regex_tokenize(self,sentence, spans):
+        """
+        incorporates reg expressions into tokenization
+        """
+        regex_token_objects = [re.compile(expression) for expression in self.regex_defined_tokens]
+        regex_token_spans = [match.span() for match in chain(*[obj.finditer(sentence) for obj in regex_token_objects])]
+
+        if regex_span_tokenize == []:
+            return spans
+
+        start = end = 0  
+        new_spans = []
+
+        for count,re_span in enumerate(regex_token_spans):
+            """
+
+            """
+            while re_span[0] > spans[end][1]:
+                end += 1      
+            new_spans += spans[start:end]
+            new_spans.append(re_span)
+            start = end 
+            while start < len(spans) and re_span[1] >= spans[start][1]:
+                start += 1
+            end = start 
+        if start < len(spans):
+            new_spans += spans[start:]
+
+        return new_spans

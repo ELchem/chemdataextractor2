@@ -15,6 +15,7 @@ import re
 from pprint import pprint
 from deprecation import deprecated
 import unicodedata
+import types
 
 import six
 
