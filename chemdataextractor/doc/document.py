@@ -243,8 +243,10 @@ class Document(BaseDocument):
                     model.update(chemical_defs)
                 else:
                     model.update(element_definitions)
-
+                    
+            # This is the key line, el.records calls eg. sentence.records which calls parser.parse_sentence
             el_records = el.records
+            
             # Save the title compound
             if isinstance(el, Title):
                 if len(el_records) == 1 and isinstance(el_records[0], Compound) and el_records[0].is_id_only:

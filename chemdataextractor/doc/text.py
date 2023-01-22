@@ -816,6 +816,8 @@ class Sentence(BaseText):
             for parser in model.parsers:
                 if hasattr(parser, 'parse_sentence'):
                     for record in parser.parse_sentence(self):
+                        if not record:
+                            continue
                         p = record.serialize()
                         if record.is_empty:  # TODO: Potential performance issues?
                             continue

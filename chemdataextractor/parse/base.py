@@ -38,6 +38,7 @@ class BaseParser(object):
 
     @abstractmethod
     def interpret(self, result, start, end):
+        print("called interpret from baseparser")
         pass
 
     def extract_error(self, string):

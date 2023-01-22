@@ -75,6 +75,7 @@ class Compound(BaseModel):
         log.debug("Updating Compound")
         for definition in definitions:
             label = definition['label']
+            print("label:",label)
             if strict:
                 new_label_expression = Group(W(label)('labels'))
             else:

@@ -8,13 +8,13 @@ from __future__ import print_function
 from __future__ import unicode_literals
 import logging
 from lxml import etree
-from .cem import cem, chemical_label, lenient_chemical_label, chemical_name
+from .cem import cem, chemical_label, lenient_chemical_label, chemical_name, chemical_label_template
 from .common import lbrct, dt, rbrct
 from ..utils import first
 from ..nlp.tokenize import ChemWordTokenizer, ChemSentenceTokenizer
 from .actions import merge, join, fix_whitespace, flatten
 from .base import BaseSentenceParser
-from .elements import W, I, R, T, Optional, Any, OneOrMore, Not, ZeroOrMore, Group, End
+from .elements import W, I, R, T, Optional, Any, OneOrMore, Not, ZeroOrMore, Group, End, Or
 from .auto import construct_unit_element, match_dimensions_of, value_element, BaseAutoParser, construct_category_element
 import six
 log = logging.getLogger(__name__)
@@ -30,28 +30,48 @@ class QuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
     Other entities are merged contextually
     """
 
+    @property
+    def seen_labels(self):
+        """Labels seen in previous sentences"""
+        # for word in self.model.compound.model_class.labels.parse_expression.exprs:
+        #     print(word.match)
+        return self.model.compound.model_class.labels.parse_expression
 
     @property
     def specifier_phrase(self):
         """The model specifier"""
         return self.model.specifier.parse_expression('specifier')
 
+    # @property
+    # def value_phrase(self):
+    #     """Value and units"""
+    #     if hasattr(self.model, 'dimensions') and not self.model.dimensions:
+    #         return value_element()
+    #     elif hasattr(self.model, 'category') and self.model.category:
+    #         return self.model.category.parse_expression('category')
+
+    #     unit_element = Group(construct_unit_element(self.model.dimensions).with_condition(
+    #         match_dimensions_of(self.model))('raw_units'))
+    #     return value_element(unit_element)
+    @property
+    def unit(self):
+        """Unit element"""
+        return Group(construct_unit_element(self.model.dimensions).with_condition(
+            match_dimensions_of(self.model))('raw_units'))
+
     @property
     def value_phrase(self):
-        """Value and units"""
+        """Value with unit"""
         if hasattr(self.model, 'dimensions') and not self.model.dimensions:
             return value_element()
         elif hasattr(self.model, 'category') and self.model.category:
             return self.model.category.parse_expression('category')
-
-        unit_element = Group(construct_unit_element(self.model.dimensions).with_condition(
-            match_dimensions_of(self.model))('raw_units'))
-        return value_element(unit_element)
+        return value_element(self.unit)
 
     @property
     def cem_phrase(self):
         """CEM phrases"""
-        return self.model.compound.model_class.parsers[0].root
+        return self.model.compound.model_class.parsers[0].root | Group(self.seen_labels)('compound')
 
     @property
     def prefix(self):
@@ -103,7 +123,7 @@ class QuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
     @property
     def cem_before_specifier_and_value_phrase(self):
         """Phrases ordered CEM, Specifier, Value, Unit"""
-        return  (
+        return  Group(
             self.cem_phrase
             + OneOrMore(Not(self.cem_phrase | self.specifier_phrase | self.specifier_and_value) + Any().hide())
             + self.specifier_and_value)('root_phrase')
@@ -150,8 +170,76 @@ class QuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
     @property
     def root(self):
         """Root Phrases"""
+        print("called root from quantity model template parser")
         root_phrase = Group(self.specifier_before_cem_and_value_phrase | self.cem_after_specifier_and_value_phrase | self.value_specifier_cem_phrase | self.cem_before_specifier_and_value_phrase | Group(self.specifier_and_value)('root_phrase'))
         return root_phrase
+    
+    def interpret(self, result, start, end):
+        """interpret multiple compounds, single specifier, multiple transitions"""
+        if result is None:
+            print("result none")
+            return
+        
+        cem_phrase = first(result.xpath('./cem_phrase'))
+        if cem_phrase is None:
+            print("cemphrase none")
+            yield None
+
+        specifier = result.xpath('./property/specifier')
+
+        if specifier is None:
+            print("specifier none")
+            yield None
+            
+        print("made it")
+        requirements = True
+        try:
+            specifier = first(result.xpath('./specifier/text()'))
+            raw_value = first(result.xpath('./raw_value/text()'))
+            raw_units = first(result.xpath('./raw_units/text()'))
+            value = self.extract_value(raw_value)
+            error = self.extract_error(raw_value)
+        except Exception as err:
+            print("exception:", err)
+            requirements = False
+        c = None
+        try:
+            if not cem_phrase.find('./compound/names') and cem_phrase.find('./compound/labels'):
+                c = self.model.compound.model_class(
+                labels=cem_phrase.xpath('./labels/text()')
+                )
+            elif cem_phrase.find('./compound/names') and not cem_phrase.find('./compound/labels'):
+                    c = self.model.compound.model_class(
+                    names=cem_phrase.xpath('./compound/names/text()'),
+                    )
+            else:
+                c = self.model.compound.model_class(
+                    names=cem_phrase.xpath('./compound/names/text()'),
+                    labels=cem_phrase.xpath('./compound/labels/text()')
+                    )
+        except Exception as err:
+            print("exception:", err)
+            requirements = False
+        try:
+            units = self.extract_units(raw_units, strict=True)
+        except TypeError as e:
+            print("type error")
+            requirements=False
+            log.debug(e)
+
+        property_entities = {
+            'specifier': specifier,
+            'raw_value': raw_value,
+            'raw_units': raw_units,
+            'error': error,
+            'value': value,
+            'units': units,
+            'compound': c}
+        model_instance = self.model(**property_entities)
+        if requirements:
+            model_instance.record_method = self.__class__.__name__
+            yield model_instance
+        
 
 class MultiQuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
     """Template for parsing sentences that contain nested or chained entities
@@ -170,6 +258,14 @@ class MultiQuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
         BaseAutoParser {[type]} -- [description]
         BaseSentenceParser {[type]} -- [description]
     """
+        
+    @property
+    def seen_labels(self):
+        """Labels seen in previous sentences"""
+        # for word in self.model.compound.model_class.labels.parse_expression.exprs:
+        #     print(word.match)
+        return self.model.compound.model_class.labels.parse_expression
+    
     @property
     def specifier_phrase(self):
         """Specifier Phrase"""
@@ -219,7 +315,8 @@ class MultiQuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
     @property
     def single_cem(self):
         """Any cem"""
-        return Group(cem | chemical_label | Group(chemical_name)('compound'))
+        #Group(self.seen_labels)('compound') |
+        return Group(self.seen_labels)('compound') | cem | Group(chemical_label_template)('compound') | Group(chemical_name)('compound')
 
     @property
     def unit(self):
@@ -425,9 +522,23 @@ class MultiQuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
             yield None
 
         c = self.model.compound.model_class()
+        # c.names = cem_el.xpath('./names/text()')
+        # c.labels = cem_el.xpath('./labels/text()')
+        
         # add names and labels
-        c.names = cem_el.xpath('./names/text()')
-        c.labels = cem_el.xpath('./labels/text()')
+        if not cem_el.find('./names') and cem_el.find('./labels'):
+            c = self.model.compound.model_class(
+            labels=cem_el.xpath('./labels/text()')
+            )
+        elif cem_el.find('./names') and not cem_el.find('./labels'):
+                c = self.model.compound.model_class(
+                names=cem_el.xpath('./names/text()'),
+                )
+        else:
+            c = self.model.compound.model_class(
+                names=cem_el.xpath('./names/text()'),
+                labels=cem_el.xpath('./labels/text()')
+                )
 
         properties = property_list.xpath('./property')
         last_unit = None
@@ -482,10 +593,25 @@ class MultiQuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
         if value_list is None:
             yield None
 
-        c = self.model.compound.model_class()
+        # c = self.model.compound.model_class()
+        # c.names = cem_el.xpath('./names/text()')
+        # c.labels = cem_el.xpath('./labels/text()')     
+           
         # add names and labels
-        c.names = cem_el.xpath('./names/text()')
-        c.labels = cem_el.xpath('./labels/text()')
+        if not cem_el.find('./names') and cem_el.find('./labels'):
+            c = self.model.compound.model_class(
+            labels=cem_el.xpath('./labels/text()')
+            )
+        elif cem_el.find('./names') and not cem_el.find('./labels'):
+                c = self.model.compound.model_class(
+                names=cem_el.xpath('./names/text()'),
+                )
+        else:
+            c = self.model.compound.model_class(
+                names=cem_el.xpath('./names/text()'),
+                labels=cem_el.xpath('./labels/text()')
+                )
+
 
         raw_values_list = value_list.xpath('./raw_value')
         raw_units_list = value_list.xpath('./raw_units')
@@ -571,7 +697,7 @@ class MultiQuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
             c = None
             try:
                 compound = cem_list[::-1][i]
-                if not compound.find('./names') and compound.find('./labels)'):
+                if not compound.find('./names') and compound.find('./labels'):
                     c = self.model.compound.model_class(
                     labels=compound.xpath('./labels/text()')
                     )
@@ -646,10 +772,24 @@ class MultiQuantityModelTemplateParser(BaseAutoParser, BaseSentenceParser):
         for cem in cem_list:  # Reverse order to make sure we get a unit
             c = None
             try:
-                c = self.model.compound.model_class(
-                    names=cem.xpath('./names/text()',
-                    labels=cem.xpath('./labels/text()')))
-            except Exception:
+                if not cem.find('./names') and cem.find('./labels'):
+                    c = self.model.compound.model_class(
+                    labels=cem.xpath('./labels/text()')
+                    )
+                elif cem.find('./names') and not cem.find('./labels'):
+                        c = self.model.cem.model_class(
+                        names=cem.xpath('./names/text()'),
+                        )
+                else:
+                    c = self.model.cem.model_class(
+                        names=cem.xpath('./names/text()'),
+                        labels=cem.xpath('./labels/text()')
+                        )
+                # c = self.model.compound.model_class(
+                #     names=cem.xpath('./names/text()',
+                #     labels=cem.xpath('./labels/text()')))
+            except Exception as err:
+                print("exception:", err)
                 requirements = False
 
             property_entities = {

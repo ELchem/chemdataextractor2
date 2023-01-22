@@ -193,7 +193,8 @@ class BaseAutoParser(BaseParser):
         self._trigger_property = None
 
     def interpret(self, result, start, end):
-        # print(etree.tostring(result))
+        # print("calling etree", etree.tostring(result))
+        print("called interpret from baseautoparser")
         if result is None:
             return
         property_entities = {}

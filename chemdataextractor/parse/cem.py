@@ -85,7 +85,8 @@ strand_labels = Group((nn | nns | camel_case_gene_label)('labels'))
 
 very_lenient_chemical_label = strand_labels | lenient_numeric('labels') | R('^([A-Z]\d{1,3})$')('labels') | strict_chemical_label
 
-chemical_label = ((label_type + lenient_chemical_label + ZeroOrMore((T('CC') | comma) + lenient_chemical_label)) | (Optional(label_type.hide()) + strict_chemical_label + ZeroOrMore((T('CC') | comma) + strict_chemical_label))).add_action(join)
+chemical_label = ((label_type + lenient_chemical_label + ZeroOrMore((T('CC') | comma) + lenient_chemical_label)) | (Optional(label_type.hide()) + strict_chemical_label + ZeroOrMore((T('CC') | comma) + strict_chemical_label)))
+chemical_label_template = ((label_type + lenient_chemical_label)| (Optional(label_type.hide()) + strict_chemical_label))
 
 #: Chemical label with a label type before
 chemical_label_phrase1 = (Optional(synthesis_of) + label_type + lenient_chemical_label + ZeroOrMore((T('CC') | comma) + lenient_chemical_label))
@@ -447,7 +448,6 @@ class CompoundParser(BaseSentenceParser):
             _type_: _description_
         """
         label = self.model.labels.parse_expression('labels')
-        print(label)
 
         label_name_cem = (label + optdelim + chemical_name)('compound')
 
@@ -472,6 +472,7 @@ class CompoundParser(BaseSentenceParser):
         # TODO: Parse label_type into label model object
         #print(etree.tostring(result))
         # print(result)
+        print("called interpret from compound model")
         for cem_el in result.xpath('./compound'):
             c = self.model(
                 names=cem_el.xpath('./names/text()'),
