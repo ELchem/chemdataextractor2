@@ -7,7 +7,7 @@ ChemDataExtractor v2 is a toolkit for extracting chemical information from the s
 Installation
 ------------
 
-`pip install chemdataextractor2`
+`python3 -m pip install chemdataextractor2 --use-feature=2020-resolver`
 
 
 Features
